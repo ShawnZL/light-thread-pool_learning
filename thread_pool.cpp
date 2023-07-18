@@ -77,7 +77,8 @@ static void WorkerLoop(std::shared_ptr<ThreadPool::State> state,
                 StopToken *stop_token = &task.stop_token;
                 lock.unlock();
                 if (!stop_token->IsStopRequested()) {
-                    std::move(task.callable)();
+                    // 用于存储取消操作的状态信息impl。是否存在它包含了一个原子整数 requested_
+                    std::move(task.callable)(); // 可调用对象
                 } else {
                     if (task.stop_callback) {
                         std::move(task.stop_callback)(stop_token->Poll());
@@ -89,6 +90,7 @@ static void WorkerLoop(std::shared_ptr<ThreadPool::State> state,
                 lock.lock();
             }
             if (ARROW_PREDICT_FALSE(--state->tasks_queued_or_running_ == 0)) {
+                // 为一个预测器指令，用于提高代码效率
                 state->cv_idle_.notify_all();
             }
         }
@@ -223,8 +225,8 @@ void ThreadPool::LaunchWorkersUnlocked(int threads) {
     std::shared_ptr<State> state = sp_state_;
 
     for (int i = 0; i < threads; i++) {
-        state_->workers_.emplace_back();
-        auto it = --(state_->workers_.end());
+        state_->workers_.emplace_back(); // 插入空线程对象
+        auto it = --(state_->workers_.end()); // 指向末尾
         *it = std::thread([this, state, it] {
             current_thread_pool_ = this;
             WorkerLoop(state, it);
@@ -240,12 +242,12 @@ Status ThreadPool::SpawnReal(TaskHints hints, internal::FnOnce<void()> task,
         if (state_->please_shutdown_) {
             return Status::Invalid("operation forbidden during or after shutdown");
         }
-        CollectFinishedWorkersUnlocked();
-        state_->tasks_queued_or_running_++;
+        CollectFinishedWorkersUnlocked(); //清理已经完成的工作线程，回收资源
+        state_->tasks_queued_or_running_++; // 新的任务加入其中
         if (static_cast<int>(state_->workers_.size()) < state_->tasks_queued_or_running_ &&
             state_->desired_capacity_ > static_cast<int>(state_->workers_.size())) {
             // We can still spin up more workers so spin up a new worker
-            LaunchWorkersUnlocked(/*threads=*/1);
+            LaunchWorkersUnlocked(/*threads=*/1); // 启动新的进程
         }
         state_->pending_tasks_.push_back(
                 {std::move(task), std::move(stop_token), std::move(stop_callback)});

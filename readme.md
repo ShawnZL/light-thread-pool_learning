@@ -153,6 +153,8 @@ Status StopToken::Poll() const {
 # macros.h
 
 ```c++
+#define ARROW_PREDICT_FALSE(x) (__builtin_expect(!!(x), 0))
+
 #define DCHECK_GE(val1, val2) \
   do { \
     if (!((val1) >= (val2))) { \
@@ -160,6 +162,34 @@ Status StopToken::Poll() const {
     } \
   } while (false)
 ```
+
+
+
+`ARROW_PREDICT_FALSE` 是一个宏定义，它使用了内建函数 `__builtin_expect`，用于进行分支预测的优化提示。
+
+`__builtin_expect` 是一个编译器内建函数，它的作用是向编译器提供关于分支条件的期望信息。该函数的原型为：
+
+```cpp
+long __builtin_expect(long exp, long c);
+```
+
+其中 `exp` 是一个表达式，`c` 是一个常量。函数返回 `exp`，并且向编译器传递了 `exp` 很可能等于 `c` 的提示。
+
+在宏定义 `ARROW_PREDICT_FALSE` 中，`__builtin_expect` 函数被用于将表达式 `(x)` 的期望结果设置为 0。这样，编译器就会认为 `(x)` 很可能为假，并相应地优化代码，以减少分支预测失败的开销。
+
+使用 `ARROW_PREDICT_FALSE` 宏可以帮助编译器更好地进行代码优化，提高程序的执行效率。但需要注意的是，`__builtin_expect` 函数的效果在不同的编译器和平台上可能会有所差异，因此在使用时需要结合具体的编译器和目标平台进行评估和测试。
+
+
+
+预测器指令（如 `ARROW_PREDICT_FALSE`）是一种编译器指示，用于向编译器提供关于代码执行路径的提示。这些提示可以帮助编译器在生成机器码时做出更好的优化决策，从而提高代码的执行效率。
+
+在这种情况下，`ARROW_PREDICT_FALSE` 用于向编译器提示后面的条件表达式很可能为假。这样，编译器可以将更多的优化资源用于假设条件为真的代码路径，提高这个路径上的指令预取、分支预测等优化效果。
+
+通过使用预测器指令，可以帮助编译器更好地利用硬件资源，并生成更有效的机器码。这可能会减少分支预测失败的次数，提高指令级并行性，从而提高代码的执行速度。
+
+需要注意的是，预测器指令只是一种提示，实际效果取决于编译器的实现和目标平台的硬件特性。在某些情况下，预测器指令可能对代码性能产生积极影响，但在其他情况下可能没有明显的改进。因此，在使用预测器指令时，需要结合具体情况进行评估和测试，以确保其对代码性能的实际影响。
+
+
 
 在宏定义中，使用反斜杠 `\` 进行换行，使得宏定义可以跨越多行。这样可以增加代码的可读性。
 
@@ -556,6 +586,7 @@ static void WorkerLoop(std::shared_ptr<ThreadPool::State> state,
     if (state->please_shutdown_) {
         // Notify the function waiting in Shutdown().
         state->cv_shutdown_.notify_one();
+      // 是用于通知等待在 state->cv_shutdown_ 条件变量上的线程，表示线程池即将关闭。
     }
 }
 ```
@@ -582,3 +613,183 @@ void ThreadPool::WaitForIdle() {
 4. 当条件满足时，当前线程会被唤醒，互斥锁会被重新加锁。函数执行结束，线程池已经变为空闲状态。
 
 通过调用 `ThreadPool::WaitForIdle()` 函数，可以确保在需要等待线程池变为空闲状态时，当前线程不会继续执行，直到线程池中的任务全部完成。这对于需要在任务执行完毕后进行后续操作的场景非常有用。
+
+```c++
+void ThreadPool::ProtectAgainstFork() {
+    pid_t current_pid = getpid();
+    if (pid_ != current_pid) {
+        int capacity = state_->desired_capacity_;
+
+        auto new_state = std::make_shared<ThreadPool::State>();
+        new_state->please_shutdown_ = state_->please_shutdown_;
+        new_state->quick_shutdown_ = state_->quick_shutdown_;
+
+        pid_ = current_pid;
+        sp_state_ = new_state;
+        state_ = sp_state_.get();
+
+        if (!state_->please_shutdown_) {
+            ARROW_UNUSED(SetCapacity(capacity));
+        }
+    }
+}
+```
+
+**调用 `ProtectAgainstFork` 函数是为了确保在线程池进行容量设置之前，线程池的状态是一致的和正确的。**
+
+`ThreadPool::ProtectAgainstFork` 函数用于在多进程环境中保护线程池的一致性。
+
+在多进程环境中，当发生进程 fork 操作时，子进程会继承父进程的资源和状态，包括线程池对象。为了避免子进程和父进程使用同一个线程池对象导致的不一致性和竞争条件，需要在子进程中重新创建一个线程池对象。
+
+该函数首先获取当前进程的 PID（进程 ID），并将其与线程池对象中保存的 PID 进行比较。如果当前 PID 与保存的 PID 不同，说明发生了进程 fork，需要进行线程池的重新保护。
+
+在重新保护线程池时，函数创建一个新的状态对象 `new_state`，并将原来的状态信息复制给新的状态对象。然后更新成员变量 `pid_` 和 `sp_state_`，使其指向新的状态对象，并将 `state_` 设置为新状态对象的指针。
+
+这样，在子进程中就拥有了一个独立的线程池对象，不会与父进程共享状态。同时，如果线程池在 fork 前没有被标记为 `please_shutdown_`，则通过调用 `SetCapacity` 方法重新设置线程池的容量，以确保在子进程中继续正常工作。
+
+通过对线程池对象进行保护，可以确保在多进程环境中每个进程都有自己独立的线程池，避免了竞争条件和不一致性问题。
+
+```c++
+Status ThreadPool::SetCapacity(int threads) {
+    ProtectAgainstFork();
+    std::unique_lock<std::mutex> lock(state_->mutex_);
+    if (state_->please_shutdown_) {
+        return Status::Invalid("operation forbidden during or after shutdown");
+    }
+    if (threads <= 0) {
+        return Status::Invalid("ThreadPool capacity must be > 0");
+    }
+    CollectFinishedWorkersUnlocked();
+
+    state_->desired_capacity_ = threads;
+    const int required = std::min(static_cast<int>(state_->pending_tasks_.size()),
+                                  threads - static_cast<int>(state_->workers_.size()));
+
+    if (required > 0) {
+        LaunchWorkersUnlocked(required);
+    } else if (required < 0) {
+        // Excess threads are running, wake them so that they stop
+        state_ -> cv_.notify_all();
+    }
+    return Status::OK();
+}
+```
+
+`ThreadPool::SetCapacity` 函数用于设置线程池的容量（即线程数量）。
+
+函数首先调用 `ProtectAgainstFork` 函数，以保护线程池的一致性。
+
+然后，函数获取线程池状态对象的互斥锁，以确保线程池状态的独占访问。
+
+接下来，函数进行一系列验证和调整操作：
+
+- 如果线程池已经被标记为 `please_shutdown_`，则表示线程池正在关闭过程中或已经关闭，此时禁止进行容量设置操作，直接返回一个表示操作无效的错误状态 `Status::Invalid`。
+- 如果要设置的线程数量小于等于0，也返回一个错误状态 `Status::Invalid`，因为线程池的容量必须大于0。
+- 函数调用 `CollectFinishedWorkersUnlocked` 函数，清理已完成的线程，将它们从线程池中移除。
+
+接下来，函数更新线程池的期望容量 `desired_capacity_`，即设置线程池应有的线程数量。
+
+然后，根据需要启动新的工作线程或停止多余的工作线程：
+
+- 如果有需要启动的新工作线程，调用 `LaunchWorkersUnlocked` 函数，在未加锁状态下启动指定数量的新工作线程。
+- 如果有多余的工作线程在运行，调用 `state_->cv_.notify_all()` 唤醒这些多余的工作线程，使其停止运行。
+
+最后，函数返回一个表示操作成功的状态 `Status::OK()`。
+
+通过 `SetCapacity` 函数，可以动态地调整线程池的容量，以满足实际需求，并确保线程池在进行容量调整时的一致性和正确性。
+
+```c++
+void ThreadPool::LaunchWorkersUnlocked(int threads) {
+    std::shared_ptr<State> state = sp_state_;
+
+    for (int i = 0; i < threads; i++) {
+        state_->workers_.emplace_back(); // 插入空线程对象
+        auto it = --(state_->workers_.end()); // 指向末尾
+        *it = std::thread([this, state, it] {
+            current_thread_pool_ = this;
+            WorkerLoop(state, it);
+        });
+    }
+}
+```
+
+`LaunchWorkersUnlocked` 函数用于启动指定数量的工作线程。
+
+在函数内部，首先获取线程池的共享状态 `state`。然后通过一个循环，依次创建并启动指定数量的线程。
+
+对于每个线程，首先将一个空的线程对象插入到 `state_->workers_` 容器中，然后获取该线程对象在容器中的迭代器 `it`。接下来，通过调用 `std::thread` 构造函数，创建一个新的线程对象，并使用 lambda 表达式作为线程的执行函数。这个 lambda 表达式捕获了当前线程池的指针 `this`、线程池的共享状态 `state`，以及当前线程对象在容器中的迭代器 `it`。
+
+在 lambda 表达式中，首先将当前线程池指针设置为 `current_thread_pool_`，以便工作线程能够访问到线程池的其他成员函数和数据。然后调用 `WorkerLoop` 函数，将线程池的共享状态和当前线程对象的迭代器作为参数传递进去。`WorkerLoop` 函数是工作线程的主循环，负责从任务队列中取出任务并执行。
+
+通过这个过程，线程池可以创建并启动指定数量的工作线程，并将它们加入到线程池的 `workers_` 容器中。每个工作线程都会执行 `WorkerLoop` 函数，以处理任务队列中的任务。
+
+```c++
+Status ThreadPool::SpawnReal(TaskHints hints, internal::FnOnce<void()> task,
+                             StopToken stop_token, StopCallback&& stop_callback) {
+    {
+        ProtectAgainstFork();
+        std::lock_guard<std::mutex> lock(state_->mutex_);
+        if (state_->please_shutdown_) {
+            return Status::Invalid("operation forbidden during or after shutdown");
+        }
+        CollectFinishedWorkersUnlocked();
+        state_->tasks_queued_or_running_++;
+        if (static_cast<int>(state_->workers_.size()) < state_->tasks_queued_or_running_ &&
+            state_->desired_capacity_ > static_cast<int>(state_->workers_.size())) {
+            // We can still spin up more workers so spin up a new worker
+            LaunchWorkersUnlocked(/*threads=*/1);
+        }
+        state_->pending_tasks_.push_back(
+                {std::move(task), std::move(stop_token), std::move(stop_callback)});
+    }
+    state_->cv_.notify_one();
+    return Status::OK();
+}
+```
+
+`ThreadPool::SpawnReal` 函数用于将任务提交到线程池执行。
+
+函数首先调用 `ProtectAgainstFork`，以保护线程池免受 fork 的影响。然后获取线程池的互斥锁 `state_->mutex_`，并进行加锁。
+
+接下来，函数检查线程池的状态，如果线程池处于关闭或正在关闭的状态，则返回错误状态，表示提交任务操作被禁止。然后调用 `CollectFinishedWorkersUnlocked`，以清理已完成的工作线程。
+
+接下来，将 `tasks_queued_or_running_` 值增加 1，表示有一个新的任务被加入队列或正在运行。如果当前工作线程的数量小于 `tasks_queued_or_running_` 值，并且线程池的期望容量大于当前工作线程的数量，则启动一个新的工作线程，通过调用 `LaunchWorkersUnlocked`。
+
+然后，将任务封装成 `Task` 结构，并将其加入到线程池的 `pending_tasks_` 队列中。
+
+在加锁的范围内，调用 `state_->cv_.notify_one()`，以通知一个等待中的工作线程有新任务可用。
+
+最后，函数解锁互斥锁，并返回 `Status::OK()` 表示任务提交成功。
+
+通过这个过程，任务被提交到线程池，并且可以被工作线程异步执行。
+
+```c++
+static int ParseOMPEnvVar(const char* name) {
+    // OMP_NUM_THREADS is a comma-separated list of positive integers.
+    // We are only interested in the first (top-level) number.
+    auto result = GetEnvVar(name);
+    if (!result.has_value()) {
+        return 0;
+    }
+    auto str = *std::move(result);
+    auto first_comma = str.find_first_of(',');
+    if (first_comma != std::string::npos) {
+        str = str.substr(0, first_comma);
+    }
+    try {
+        return std::max(0, std::stoi(str));
+    } catch (...) {
+        return 0;
+    }
+}
+```
+
+`ParseOMPEnvVar` 函数用于解析环境变量 `OMP_NUM_THREADS`，该环境变量是一个逗号分隔的正整数列表。函数的目的是获取列表中的第一个（顶层）数字。
+
+函数首先调用 `GetEnvVar` 函数获取环境变量的值，并检查是否存在。如果环境变量不存在，则返回 0。
+
+如果环境变量的值存在，则将其移动到 `std::string` 对象 `str` 中。接下来，查找字符串中第一个逗号的位置，并将字符串截断到该逗号之前的部分。这是因为我们只对顶层的数字感兴趣，而忽略其他逗号后面的数字。
+
+然后，使用 `std::stoi` 函数将截断后的字符串转换为整数。如果转换过程中发生异常，例如字符串无法解析为整数，将返回 0。否则，返回解析后的整数值，取最大值为 0 和解析后的整数值的较大者。
+
+通过这个过程，函数可以解析并获取环境变量 `OMP_NUM_THREADS` 的值，并将其转换为整数表示。

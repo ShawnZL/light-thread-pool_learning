@@ -197,6 +197,10 @@ long __builtin_expect(long exp, long c);
 
 `DCHECK_GE` 宏接受两个参数 `val1` 和 `val2`，并使用条件 `(val1) >= (val2)` 进行断言检查。如果断言条件不成立，则调用 `std::abort()` 终止程序的执行。
 
+
+
+**本来希望在这里使用googletest中的断言语句`EXPECT_EQ`进行替代`ASSERT_EQ` 宏，但是`EXPECT_EQ`在运行代码情况中不会停止运行，会继续执行后续代码，但是`ASSERT_EQ` 宏定义中，会在断言失败时终止当前测试用例的执行。**
+
 # status.h
 
 ```c++

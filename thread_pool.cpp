@@ -9,7 +9,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-
+#include <gtest/gtest.h>
 #include "cancel.h"
 #include "io_util.h"
 #include "macros.h"
@@ -50,7 +50,10 @@ static void WorkerLoop(std::shared_ptr<ThreadPool::State> state,
     std::unique_lock<std::mutex> lock(state->mutex_);
     // Since we hold the lock, `it` now points to the correct thread object
     // (LaunchWorkersUnlocked has exited)
-    DCHECK_EQ(std::this_thread::get_id(), it->get_id());
+
+    // test google test
+//    DCHECK_EQ(std::this_thread::get_id(), it->get_id());
+    ASSERT_EQ(std::this_thread::get_id(), it->get_id());
 
     // If too many threads, we should secede from the pool
     const auto should_secede = [&]() -> bool {

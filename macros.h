@@ -10,7 +10,8 @@
 
 #define ARROW_PREDICT_FALSE(x) (__builtin_expect(!!(x), 0))
 
-// 如果使用google test EXPECT_EQ 断言失败时会继续进行，不会停止测试前进
+// 如果使用google test EXPECT_EQ 断言失败时会继续进行代码，不会停止测试
+// 但是可以尝试使用Assert系列的断言
 #define DCHECK_GE(val1, val2) \
   do { \
     if (!((val1) >= (val2))) { \

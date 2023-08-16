@@ -1,7 +1,5 @@
 # 源码阅读📖
 
-[基于Arrow的轻量线程池](https://github.com/datawhalechina/light-thread-pool/tree/main)
-
 # todo
 
 ❌在`macro.h` 中定义了很多宏，是原先Apache Arrow当中留下的宏定义，其中的一些东西可以使用 `Google test` 进行替换，在`thread_pool.cpp` 中54-56行进行了测试，是可以进行替换的！

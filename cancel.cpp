@@ -22,7 +22,7 @@ struct StopSourceImpl {
     // 如果 requested_ 的值为 -1，表示取消操作已经被请求。
     // 如果 requested_ 的值大于 0，表示取消操作由特定的信号（signal）引发，该值代表了信号的编号。
     std::mutex mutex_;
-    Status cancel_error_;
+    Status cancel_error_; // 存储取消操作的错误信息
 };
 
 StopSource::StopSource(): impl_(new StopSourceImpl) {}

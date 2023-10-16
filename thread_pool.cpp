@@ -60,7 +60,7 @@ static void WorkerLoop(std::shared_ptr<ThreadPool::State> state,
         return state->workers_.size() > static_cast<size_t>(state->desired_capacity_);
     };
 
-    while (true) {
+    while (true) { // 不间断一直执行
         // By the time this thread is started, some tasks may have been pushed
         // or shutdown could even have been requested.  So we only wait on the
         // condition variable at the end of the loop.
@@ -79,11 +79,11 @@ static void WorkerLoop(std::shared_ptr<ThreadPool::State> state,
                 state->pending_tasks_.pop_front();
                 StopToken *stop_token = &task.stop_token;
                 lock.unlock();
-                if (!stop_token->IsStopRequested()) {
+                if (!stop_token->IsStopRequested()) { // 检查是否需要停止
                     // 用于存储取消操作的状态信息impl。是否存在它包含了一个原子整数 requested_
                     std::move(task.callable)(); // 可调用对象
-                } else {
-                    if (task.stop_callback) {
+                } else { // 需要停止不执行
+                    if (task.stop_callback) { // 选择停止函数并执行
                         std::move(task.stop_callback)(stop_token->Poll());
                         // std::move来将 task.stop_callback 移动（Move）到函数调用中，
                         // 同时传递了 stop_token->Poll() 作为参数。
@@ -250,7 +250,7 @@ Status ThreadPool::SpawnReal(TaskHints hints, internal::FnOnce<void()> task,
         if (static_cast<int>(state_->workers_.size()) < state_->tasks_queued_or_running_ &&
             state_->desired_capacity_ > static_cast<int>(state_->workers_.size())) {
             // We can still spin up more workers so spin up a new worker
-            LaunchWorkersUnlocked(/*threads=*/1); // 启动新的进程
+            LaunchWorkersUnlocked(/*threads=*/1); // 启动新的进程，启动线程池
         }
         state_->pending_tasks_.push_back(
                 {std::move(task), std::move(stop_token), std::move(stop_callback)});

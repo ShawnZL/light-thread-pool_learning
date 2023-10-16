@@ -211,7 +211,22 @@ long __builtin_expect(long exp, long c);
 //explicit只能使用显式转换 阻止行为Status x = Status(code);
 ```
 
-详细见自己的归纳总结
+这段代码定义了一个名为 `Status` 的C++类，用于表示一种状态。该类具有以下功能：
+
+1. 构造函数：`Status` 类有多个构造函数，包括默认构造函数、接受状态代码和消息的构造函数。构造函数用于创建不同状态的 `Status` 对象。其中就包含两个部分：`StatusCode code_`和`std::string msg_`
+2. 成员函数：
+   - `code()`: 返回状态代码。
+   - `message()`: 返回状态消息。
+   - `ok()`: 检查状态是否为OK。
+   - `ToString()`: 将状态转换为字符串表示，包括状态代码和消息。
+3. 静态成员函数：
+   - `OK()`: 返回一个表示OK状态的 `Status` 对象。
+   - `Invalid(const std::string& msg)`: 返回一个表示无效状态的 `Status` 对象，可附带自定义消息。
+   - `Cancelled(const std::string& msg)`: 返回一个表示被取消状态的 `Status` 对象，可附带自定义消息。
+   - `KeyError(const std::string& msg)`: 返回一个表示键错误状态的 `Status` 对象，可附带自定义消息。
+4. `Abort` 函数：当发生严重错误时，用于输出错误消息到标准错误流 (`std::cerr`) 并终止程序执行。
+
+此类允许您创建不同状态的对象，并提供了一种便捷的方式来检查状态、获取状态信息以及输出错误消息。这在处理程序中的状态和错误时非常有用。
 
 # executor.h
 
@@ -274,6 +289,16 @@ template <typename Function, typename... Args,
 最后，函数调用`SpawnReal`将任务提交给任务池执行，并返回一个表示任务结果的`future`对象。如果任务提交失败（`SpawnReal`返回非`ok()`的`Status`），则抛出`std::runtime_error`异常。
 
 总而言之，`Submit`函数用于将任务提交到任务池并返回一个`future`对象，以便在需要时获取任务的执行结果。
+
+## part0
+
+`internal::FnOnce<void()>` 看起来是一个函数对象或可调用对象，其类型表示它是一个接受无参数并返回 `void` 的函数或可调用对象。在C++中，函数对象通常用于代表某个可执行的操作，这些操作可以像函数一样被调用。
+
+- `internal::FnOnce`: 这可能是一个命名空间、类或结构体，用于封装函数对象的类型或可调用对象的类型。`FnOnce` 通常用于表示函数或操作，表示它可以被执行一次。
+
+- `<void()>`: 这是函数对象的参数列表和返回值类型。在这里，参数列表为空，表示不接受任何参数，而返回值类型为 `void`，表示函数或操作不返回任何值。
+
+所以，`internal::FnOnce<void()> task` 声明了一个名为 `task` 的对象，它是一个函数对象或可调用对象，可以被执行一次，接受零个参数，执行后不返回任何值（`void`）。通常，这种语法用于存储一个可执行的操作，然后在适当的时候执行它，例如使用 `task()` 来执行它。
 
 ## Part1
 
@@ -338,8 +363,6 @@ lambda 表达式是一种匿名函数对象，可以捕获外部变量，并定�
 如果发生了异常，使用 `std::current_exception()` 获取当前异常，并通过 `promise.set_exception()` 将异常传递给 `std::promise`。
 
 最终，定义的 lambda 表达式 `task` 可以作为一个可调用对象，在适当的时机被调用，执行异步任务的逻辑。
-
-
 
 ## std::invoke
 

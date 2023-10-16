@@ -71,8 +71,8 @@ namespace arrow {
             std::future<ReturnType> future = promise.get_future();
             // 创建一个异步任务
             auto task = [func = std::forward<Function>(func),
-                    tup = std::make_tuple(std::forward<Args>(args)...),
-                    promise = std::move(promise)]() mutable {
+                    tup = std::make_tuple(std::forward<Args>(args)...), // 多参数
+                    promise = std::move(promise)]() mutable { // 允许修改lambda内部的局部变量
                 try {
                     if constexpr (!std::is_void_v<ReturnType>) {
                         ReturnType result = std::apply(std::move(func), std::move(tup));
@@ -125,7 +125,7 @@ namespace arrow {
 
         // Subclassing API
         virtual Status SpawnReal(TaskHints hints, internal::FnOnce<void()> task, StopToken,
-                                 StopCallback&&) = 0;
+                                 StopCallback&&) = 0; // internal::FnOnce 用于封装函数对象的类型或者可调用对象，FnOnce表示函数或者操作可以被执行一次
     };
 }  // namespace arrow
 
